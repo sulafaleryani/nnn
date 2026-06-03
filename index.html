@@ -2,760 +2,428 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cinephile Movie Platform</title>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,800;1,700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Cinephile • Discover the Seventh Art</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700;14..32,800&family=Playfair+Display:ital,wght@0,700;0,800;1,700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: #060606; font-family: system-ui, -apple-system, sans-serif; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background-color: #060606; 
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            overflow-x: hidden;
+        }
         ::-webkit-scrollbar { display: none; }
         html { scrollbar-width: none; }
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes softGlow {
+            0% { box-shadow: 0 0 0 0 rgba(230,179,30,0.2); }
+            100% { box-shadow: 0 0 0 8px rgba(230,179,30,0); }
+        }
+        .animate-in {
+            animation: fadeSlideUp 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1) forwards;
+        }
     </style>
 </head>
 <body>
-
     <div id="root"></div>
 
     <script type="text/babel">
-        // Mirroring your imports from the core standard bundle
+        // ----------------------------------------------
+        //  CINEPHILE PLATFORM – MODERN MOVIE DISCOVERY
+        //  React 18 + TMDb API | rich modal, reviews, watchlist
+        // ----------------------------------------------
         const { useState, useEffect, useRef, useCallback } = React;
 
-        // ================================================
-        // SECURE TOKEN CONFIGURATION FOR NETLIFY
-        // Your token is stored as an environment variable in Netlify
-        // It never appears in your GitHub code!
-        // ================================================
-        
-        // This reads the token from Netlify's environment variables
-        // For local testing, you can set window.TMDB_TOKEN manually
-        const API_TOKEN = typeof process !== 'undefined' && process.env && process.env.TMDB_TOKEN 
-            ? process.env.TMDB_TOKEN 
-            : window.TMDB_TOKEN;
-        
-        if (!API_TOKEN) {
-            console.error("⚠️ No API token found! Please add TMDB_TOKEN to Netlify environment variables.");
-        }
-        
-        const BASE = "https://api.themoviedb.org/3";
-        const IMG = "https://image.tmdb.org/t/p";
-
+        // ----------  API CONFIGURATION  ----------
+        const API_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJkMWYyYTdiYzhkNTk1OWU4YjA0MTFjMmRjZjE4ZTU2YyIsIm5iZiI6MTc4MDMzMjgwMC4yMTQwMDAyLCJzdWIiOiI2YTFkYjkwMDI3MDU5MzFjMWZkZDdiMGYiLCJzY29wZXMiOlsiYXBpX3JlYWQiXSwidmVyc2lvbiI6MX0.whrB6ZyUdOIGZUTs4Dk_6e8uFlWzGWur0w9SaHzI_20";
+        const BASE_URL = "https://api.themoviedb.org/3";
+        const IMG_BASE = "https://image.tmdb.org/t/p";
         const headers = { Authorization: `Bearer ${API_TOKEN}`, "Content-Type": "application/json" };
-        const fetcher = (url) => fetch(url, { headers }).then((r) => r.json());
+        const fetcher = (url) => fetch(url, { headers }).then(res => res.json());
 
-        // Custom LocalStorage State Sync Hook
-        function useLocalStorage(key, init) {
-          const [val, setVal] = useState(() => {
-            try { return JSON.parse(localStorage.getItem(key)) ?? init; } catch { return init; }
-          });
-          const write = useCallback((v) => {
-            setVal(v);
-            localStorage.setItem(key, JSON.stringify(v));
-          }, [key]);
-          return [val, write];
-        }
-
-        const GENRES_MAP = {
-          28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
-          99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
-          27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi",
-          10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western",
+        // ----------  UTILITIES  ----------
+        const useLocalStorage = (key, initialValue) => {
+            const [stored, setStored] = useState(() => {
+                try {
+                    const item = localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch { return initialValue; }
+            });
+            const setValue = useCallback((value) => {
+                setStored(prev => {
+                    const newVal = typeof value === 'function' ? value(prev) : value;
+                    localStorage.setItem(key, JSON.stringify(newVal));
+                    return newVal;
+                });
+            }, [key]);
+            return [stored, setValue];
         };
 
-        function StarRating({ value, onChange }) {
-          const [hover, setHover] = useState(0);
-          return (
-            <div style={{ display: "flex", gap: 4 }}>
-              {[1, 2, 3, 4, 5].map((s) => (
-                <span
-                  key={s}
-                  onClick={() => onChange(s)}
-                  onMouseEnter={() => setHover(s)}
-                  onMouseLeave={() => setHover(0)}
-                  style={{
-                    fontSize: 22,
-                    cursor: "pointer",
-                    color: s <= (hover || value) ? "#E6B31E" : "#444",
-                    transition: "color 0.15s",
-                  }}
-                >★</span>
-              ))}
-            </div>
-          );
-        }
+        const GENRES_MAP = {
+            28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
+            99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
+            27: "Horror", 10402: "Music", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi",
+            10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western"
+        };
 
-        function ScoreBadge({ score }) {
-          const pct = Math.round(score * 10);
-          const color = pct >= 70 ? "#21D07A" : pct >= 50 ? "#D2D531" : "#DB2360";
-          return (
-            <div style={{
-              width: 46, height: 46, borderRadius: "50%",
-              background: "#081C22", border: `3px solid ${color}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: "'DM Mono', monospace" }}>
-                {pct}<span style={{ fontSize: 8 }}>%</span>
-              </span>
-            </div>
-          );
-        }
-
-        function MovieCard({ movie, onClick, isInWatchlist, onWatchlistToggle }) {
-          const [hovered, setHovered] = useState(false);
-          const poster = movie.poster_path ? `${IMG}/w342${movie.poster_path}` : null;
-          const year = movie.release_date?.slice(0, 4);
-
-          return (
-            <div
-              onClick={() => onClick(movie)}
-              onMouseEnter={() => setHovered(true)}
-              onMouseLeave={() => setHovered(false)}
-              style={{
-                position: "relative", cursor: "pointer", borderRadius: 6, overflow: "hidden",
-                background: "#1a1a2e",
-                transform: hovered ? "scale(1.04) translateY(-4px)" : "scale(1)",
-                transition: "transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s",
-                boxShadow: hovered ? "0 20px 60px rgba(0,0,0,0.7)" : "0 4px 16px rgba(0,0,0,0.4)",
-                zIndex: hovered ? 2 : 1,
-              }}
-            >
-              <div style={{ aspectRatio: "2/3", background: "#111" }}>
-                {poster ? (
-                  <img src={poster} alt={movie.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} loading="lazy" />
-                ) : (
-                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#1a1a2e", padding: 16, textAlign: "center" }}>
-                    <span style={{ color: "#666", fontSize: 13 }}>{movie.title}</span>
-                  </div>
-                )}
-              </div>
-
-              <div style={{
-                position: "absolute", bottom: 0, left: 0, right: 0,
-                background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 60%, transparent 100%)",
-                padding: "32px 10px 10px",
-                opacity: hovered ? 1 : 0, transition: "opacity 0.2s",
-              }}>
-                <p style={{ color: "#fff", fontSize: 12, fontWeight: 600, margin: "0 0 4px", lineHeight: 1.3 }}>{movie.title}</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {year && <span style={{ color: "#aaa", fontSize: 11 }}>{year}</span>}
-                  <span style={{ color: "#E6B31E", fontSize: 11 }}>★ {movie.vote_average?.toFixed(1)}</span>
-                </div>
-              </div>
-
-              <button
-                onClick={(e) => { e.stopPropagation(); onWatchlistToggle(movie); }}
-                style={{
-                  position: "absolute", top: 8, right: 8,
-                  background: isInWatchlist ? "#E6B31E" : "rgba(0,0,0,0.7)",
-                  border: "none", borderRadius: "50%", width: 28, height: 28,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  cursor: "pointer", fontSize: 14, transition: "all 0.2s",
-                  opacity: hovered ? 1 : 0,
-                  color: isInWatchlist ? "#000" : "#fff",
-                }}
-                title={isInWatchlist ? "Remove from watchlist" : "Add to watchlist"}
-              >
-                {isInWatchlist ? "✓" : "+"}
-              </button>
-            </div>
-          );
-        }
-
-        function HeroSlider({ movies, onMovieClick }) {
-          const [index, setIndex] = useState(0);
-          const [fade, setFade] = useState(true);
-          const timer = useRef(null);
-
-          const go = useCallback((i) => {
-            setFade(false);
-            setTimeout(() => { setIndex(i); setFade(true); }, 300);
-          }, []);
-
-          useEffect(() => {
-            if (!movies.length) return;
-            timer.current = setInterval(() => {
-              setFade(false);
-              setTimeout(() => { setIndex((p) => (p + 1) % Math.min(movies.length, 8)); setFade(true); }, 300);
-            }, 6000);
-            return () => clearInterval(timer.current);
-          }, [movies.length]);
-
-          const movie = movies[index];
-          if (!movie) return null;
-
-          const backdrop = movie.backdrop_path ? `${IMG}/original${movie.backdrop_path}` : null;
-          const year = movie.release_date?.slice(0, 4);
-          const genres = (movie.genre_ids || []).slice(0, 3).map((id) => GENRES_MAP[id]).filter(Boolean);
-
-          return (
-            <div style={{ position: "relative", height: "92vh", minHeight: 520, overflow: "hidden", background: "#060606" }}>
-              {backdrop && (
-                <div style={{ position: "absolute", inset: 0, opacity: fade ? 1 : 0, transition: "opacity 0.4s" }}>
-                  <img src={backdrop} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
-                  <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(6,6,6,0.95) 0%, rgba(6,6,6,0.6) 50%, rgba(6,6,6,0.15) 100%)" }} />
-                  <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(6,6,6,1) 0%, rgba(6,6,6,0) 40%)" }} />
-                </div>
-              )}
-
-              <div style={{
-                position: "absolute", bottom: "12%", left: 0, right: 0, padding: "0 5%",
-                opacity: fade ? 1 : 0, transition: "opacity 0.4s",
-                maxWidth: 620,
-              }}>
-                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                  {genres.map((g) => (
-                    <span key={g} style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#E6B31E", border: "1px solid rgba(230,179,30,0.4)", padding: "3px 10px", borderRadius: 3 }}>{g}</span>
-                  ))}
-                </div>
-                <h2 style={{ fontSize: "clamp(28px, 4vw, 52px)", fontWeight: 800, color: "#fff", margin: "0 0 12px", lineHeight: 1.1, fontFamily: "'Playfair Display', serif", textShadow: "0 2px 20px rgba(0,0,0,0.5)" }}>
-                  {movie.title}
-                </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-                  <span style={{ color: "#E6B31E", fontWeight: 700 }}>★ {movie.vote_average?.toFixed(1)}</span>
-                  {year && <span style={{ color: "#888" }}>{year}</span>}
-                  <ScoreBadge score={movie.vote_average} />
-                </div>
-                <p style={{ color: "#ccc", fontSize: 15, lineHeight: 1.7, margin: "0 0 24px", maxWidth: 520 }}>
-                  {movie.overview?.slice(0, 200)}{movie.overview?.length > 200 ? "..." : ""}
-                </p>
-                <button
-                  onClick={() => onMovieClick(movie)}
-                  style={{
-                    background: "#E6B31E", color: "#000", border: "none", borderRadius: 6,
-                    padding: "12px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer",
-                    letterSpacing: "0.04em", transition: "all 0.2s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#f5c842"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "#E6B31E"; }}
-                >
-                  View Details
-                </button>
-              </div>
-
-              <div style={{ position: "absolute", bottom: "10%", right: "5%", display: "flex", gap: 8 }}>
-                {movies.slice(0, 8).map((_, i) => (
-                  <button
-                    key={i} onClick={() => go(i)}
-                    style={{
-                      width: i === index ? 28 : 8, height: 8, borderRadius: 4, border: "none",
-                      background: i === index ? "#E6B31E" : "rgba(255,255,255,0.3)",
-                      cursor: "pointer", transition: "all 0.3s", padding: 0,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        }
-
-        function MovieRow({ title, movies, onMovieClick, watchlist, onWatchlistToggle, accentColor = "#E6B31E" }) {
-          const rowRef = useRef(null);
-          const scroll = (dir) => {
-            rowRef.current?.scrollBy({ left: dir * 280, behavior: "smooth" });
-          };
-
-          return (
-            <div style={{ marginBottom: 48 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 5%", marginBottom: 16 }}>
-                <span style={{ width: 4, height: 24, background: accentColor, borderRadius: 2, flexShrink: 0 }} />
-                <h3 style={{ color: "#fff", fontSize: 20, fontWeight: 700, margin: 0, fontFamily: "'Playfair Display', serif" }}>{title}</h3>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                  {["‹", "›"].map((arrow, i) => (
-                    <button key={arrow} onClick={() => scroll(i === 0 ? -1 : 1)}
-                      style={{
-                        background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
-                        width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 18,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        transition: "background 0.2s",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.25)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-                    >{arrow}</button>
-                  ))}
-                </div>
-              </div>
-
-              <div ref={rowRef} style={{
-                display: "flex", gap: 12, padding: "8px 5%",
-                overflowX: "auto", scrollbarWidth: "none",
-              }}>
-                {movies.map((m) => (
-                  <div key={m.id} style={{ flexShrink: 0, width: 160 }}>
-                    <MovieCard
-                      movie={m}
-                      onClick={onMovieClick}
-                      isInWatchlist={watchlist.some((w) => w.id === m.id)}
-                      onWatchlistToggle={onWatchlistToggle}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
-
-        function CastCard({ person }) {
-          const photo = person.profile_path ? `${IMG}/w185${person.profile_path}` : null;
-          return (
-            <div style={{ flexShrink: 0, width: 120, textAlign: "center" }}>
-              <div style={{ width: 80, height: 80, borderRadius: "50%", overflow: "hidden", margin: "0 auto 8px", background: "#1a1a2e", border: "2px solid #333" }}>
-                {photo ? (
-                  <img src={photo} alt={person.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: 22 }}>👤</div>
-                )}
-              </div>
-              <p style={{ color: "#fff", fontSize: 12, fontWeight: 600, margin: "0 0 3px" }}>{person.name}</p>
-              <p style={{ color: "#888", fontSize: 11, margin: 0 }}>{person.character}</p>
-            </div>
-          );
-        }
-
-        function MovieModal({ movieId, onClose, watchlist, onWatchlistToggle, reviews, onAddReview }) {
-          const [movie, setMovie] = useState(null);
-          const [credits, setCredits] = useState(null);
-          const [similar, setSimilar] = useState([]);
-          const [reviewText, setReviewText] = useState("");
-          const [reviewRating, setReviewRating] = useState(0);
-          const [loading, setLoading] = useState(true);
-          const [tab, setTab] = useState("about");
-          const scrollRef = useRef(null);
-
-          useEffect(() => {
-            if (!movieId) return;
-            setLoading(true);
-            setTab("about");
-            scrollRef.current?.scrollTo(0, 0);
-            Promise.all([
-              fetcher(`${BASE}/movie/${movieId}?language=en-US`),
-              fetcher(`${BASE}/movie/${movieId}/credits?language=en-US`),
-              fetcher(`${BASE}/movie/${movieId}/similar?language=en-US&page=1`),
-            ]).then(([m, c, s]) => {
-              setMovie(m);
-              setCredits(c);
-              setSimilar(s.results?.slice(0, 12) || []);
-              setLoading(false);
-            });
-          }, [movieId]);
-
-          const handleReview = () => {
-            if (!reviewText.trim() || !reviewRating) return;
-            onAddReview(movieId, { text: reviewText, rating: reviewRating, date: new Date().toLocaleDateString() });
-            setReviewText("");
-            setReviewRating(0);
-          };
-
-          const movieReviews = reviews[movieId] || [];
-          const isWatchlisted = watchlist.some((w) => w.id === movieId);
-
-          if (!movieId) return null;
-
-          return (
-            <div
-              onClick={onClose}
-              style={{
-                position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000,
-                display: "flex", alignItems: "flex-start", justifyContent: "center",
-                padding: "20px 16px", overflowY: "auto", backdropFilter: "blur(6px)",
-              }}
-            >
-              <div
-                ref={scrollRef}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  background: "#0D0D0D", borderRadius: 12, width: "100%", maxWidth: 900,
-                  overflow: "hidden", border: "1px solid #222",
-                  boxShadow: "0 40px 120px rgba(0,0,0,0.9)",
-                  animation: "slideUp 0.3s cubic-bezier(0.34,1.1,0.64,1)",
-                }}
-              >
-                <style>{`@keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
-
-                {loading ? (
-                  <div style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <div style={{ width: 40, height: 40, border: "3px solid #333", borderTopColor: "#E6B31E", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                  </div>
-                ) : movie ? (
-                  <>
-                    <div style={{ position: "relative", height: 340, background: "#060606", overflow: "hidden" }}>
-                      {movie.backdrop_path && (
-                        <>
-                          <img src={`${IMG}/original${movie.backdrop_path}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top" }} />
-                          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(13,13,13,0) 0%, rgba(13,13,13,0.85) 70%, rgba(13,13,13,1) 100%)" }} />
-                          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(13,13,13,0.7) 0%, transparent 60%)" }} />
-                        </>
-                      )}
-                      <button
-                        onClick={onClose}
-                        style={{
-                          position: "absolute", top: 16, right: 16,
-                          background: "rgba(0,0,0,0.7)", border: "1px solid #333",
-                          color: "#fff", borderRadius: "50%", width: 36, height: 36,
-                          cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-                        }}
-                      >✕</button>
-
-                      <div style={{ position: "absolute", bottom: 24, left: 24, right: 24 }}>
-                        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                          {movie.genres?.map((g) => (
-                            <span key={g.id} style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#E6B31E", border: "1px solid rgba(230,179,30,0.4)", padding: "3px 10px", borderRadius: 3 }}>{g.name}</span>
-                          ))}
-                        </div>
-                        <h2 style={{ color: "#fff", fontSize: 32, fontWeight: 800, margin: "0 0 12px", fontFamily: "'Playfair Display', serif", lineHeight: 1.1 }}>{movie.title}</h2>
-                        <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-                          <ScoreBadge score={movie.vote_average} />
-                          <div>
-                            <p style={{ color: "#888", fontSize: 11, margin: "0 0 2px" }}>User Score</p>
-                            <p style={{ color: "#E6B31E", fontWeight: 700, margin: 0 }}>★ {movie.vote_average?.toFixed(1)} / 10</p>
-                          </div>
-                          {movie.release_date && <span style={{ color: "#888", fontSize: 14 }}>{movie.release_date?.slice(0, 4)}</span>}
-                          {movie.runtime && <span style={{ color: "#888", fontSize: 14 }}>{Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m</span>}
-                          {movie.vote_count && <span style={{ color: "#666", fontSize: 13 }}>{movie.vote_count?.toLocaleString()} votes</span>}
-                          <button
-                            onClick={() => onWatchlistToggle(movie)}
+        // ----------  REUSABLE COMPONENTS  ----------
+        const StarRating = ({ value, onChange }) => {
+            const [hover, setHover] = useState(0);
+            return (
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {[1, 2, 3, 4, 5].map(star => (
+                        <span
+                            key={star}
+                            onClick={() => onChange(star)}
+                            onMouseEnter={() => setHover(star)}
+                            onMouseLeave={() => setHover(0)}
                             style={{
-                              background: isWatchlisted ? "#E6B31E" : "transparent",
-                              border: `1px solid ${isWatchlisted ? "#E6B31E" : "#555"}`,
-                              color: isWatchlisted ? "#000" : "#fff",
-                              borderRadius: 6, padding: "8px 20px", cursor: "pointer",
-                              fontWeight: 600, fontSize: 13, transition: "all 0.2s",
+                                fontSize: 26,
+                                cursor: "pointer",
+                                color: star <= (hover || value) ? "#F5C518" : "#3A3A4A",
+                                transition: "transform 0.1s, color 0.1s",
+                                transform: hover === star ? "scale(1.1)" : "scale(1)",
+                                display: "inline-block"
                             }}
-                            onMouseEnter={(e) => { if (!isWatchlisted) { e.currentTarget.style.borderColor = "#E6B31E"; e.currentTarget.style.color = "#E6B31E"; } }}
-                            onMouseLeave={(e) => { if (!isWatchlisted) { e.currentTarget.style.borderColor = "#555"; e.currentTarget.style.color = "#fff"; } }}
-                          >
-                            {isWatchlisted ? "✓ Watchlisted" : "+ Watchlist"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                        >★</span>
+                    ))}
+                </div>
+            );
+        };
 
-                    <div style={{ display: "flex", borderBottom: "1px solid #222", padding: "0 24px" }}>
-                      {["about", "cast", "reviews", "similar"].map((t) => (
-                        <button
-                          key={t} onClick={() => setTab(t)}
-                          style={{
-                            background: "none", border: "none", color: tab === t ? "#E6B31E" : "#666",
-                            borderBottom: tab === t ? "2px solid #E6B31E" : "2px solid transparent",
-                            padding: "14px 20px", cursor: "pointer", fontWeight: 600, fontSize: 14,
-                            textTransform: "capitalize", transition: "color 0.2s", letterSpacing: "0.03em",
-                          }}
-                        >{t}</button>
-                      ))}
-                    </div>
+        const ScoreBadge = ({ score }) => {
+            const percent = Math.round(score * 10);
+            const color = percent >= 70 ? "#21D07A" : percent >= 45 ? "#F5C518" : "#E65C4F";
+            return (
+                <div style={{
+                    width: 48, height: 48, borderRadius: "50%", background: "#081C22",
+                    border: `3px solid ${color}`, display: "flex", alignItems: "center",
+                    justifyContent: "center", fontWeight: 800, backdropFilter: "blur(2px)"
+                }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color, letterSpacing: "-0.5px" }}>
+                        {percent}<span style={{ fontSize: 8, fontWeight: 600 }}>%</span>
+                    </span>
+                </div>
+            );
+        };
 
-                    <div style={{ padding: "28px 24px", minHeight: 280 }}>
-                      {tab === "about" && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
-                          <div>
-                            <p style={{ color: "#ccc", fontSize: 15, lineHeight: 1.8, margin: "0 0 24px" }}>{movie.overview || "No overview available."}</p>
-                            {movie.tagline && (
-                              <p style={{ color: "#E6B31E", fontStyle: "italic", borderLeft: "3px solid #E6B31E", paddingLeft: 16, margin: "0 0 24px" }}>"{movie.tagline}"</p>
-                            )}
-                          </div>
-                          <div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                              {[
-                                ["Status", movie.status],
-                                ["Language", movie.original_language?.toUpperCase()],
-                                ["Budget", movie.budget ? `$${(movie.budget / 1e6).toFixed(0)}M` : "N/A"],
-                                ["Revenue", movie.revenue ? `$${(movie.revenue / 1e6).toFixed(0)}M` : "N/A"],
-                              ].map(([label, value]) => value && (
-                                <div key={label} style={{ background: "#161616", borderRadius: 8, padding: "14px 16px", border: "1px solid #222" }}>
-                                  <p style={{ color: "#666", fontSize: 11, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
-                                  <p style={{ color: "#fff", fontWeight: 600, margin: 0, fontSize: 15 }}>{value}</p>
-                                </div>
-                              ))}
-                            </div>
-                            {movie.production_companies?.length > 0 && (
-                              <div style={{ marginTop: 20 }}>
-                                <p style={{ color: "#666", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>Production</p>
-                                {movie.production_companies.slice(0, 3).map((c) => (
-                                  <span key={c.id} style={{ display: "inline-block", fontSize: 13, color: "#aaa", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 4, padding: "3px 10px", marginRight: 6, marginBottom: 6 }}>{c.name}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {tab === "cast" && (
-                        <div>
-                          <div style={{ display: "flex", gap: 24, overflowX: "auto", padding: "8px 0", scrollbarWidth: "none" }}>
-                            {credits?.cast?.slice(0, 20).map((p) => <CastCard key={p.id} person={p} />)}
-                          </div>
-                          {credits?.crew?.filter((c) => ["Director", "Producer", "Screenplay"].includes(c.job)).length > 0 && (
-                            <div style={{ marginTop: 32, borderTop: "1px solid #222", paddingTop: 24 }}>
-                              <p style={{ color: "#666", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 16px" }}>Crew Highlights</p>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                                {credits.crew.filter((c) => ["Director", "Producer", "Screenplay"].includes(c.job)).slice(0, 8).map((p) => (
-                                  <div key={`${p.id}-${p.job}`} style={{ background: "#161616", border: "1px solid #222", borderRadius: 8, padding: "10px 14px" }}>
-                                    <p style={{ color: "#fff", fontWeight: 600, fontSize: 13, margin: "0 0 3px" }}>{p.name}</p>
-                                    <p style={{ color: "#E6B31E", fontSize: 11, margin: 0 }}>{p.job}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {tab === "reviews" && (
-                        <div>
-                          <div style={{ background: "#161616", borderRadius: 10, padding: "20px", border: "1px solid #222", marginBottom: 28 }}>
-                            <p style={{ color: "#aaa", fontSize: 13, margin: "0 0 12px" }}>Write your review</p>
-                            <StarRating value={reviewRating} onChange={setReviewRating} />
-                            <textarea
-                              value={reviewText}
-                              onChange={(e) => setReviewText(e.target.value)}
-                              placeholder="Share your thoughts..."
-                              style={{
-                                width: "100%", marginTop: 14, background: "#0a0a0a", border: "1px solid #333",
-                                borderRadius: 8, color: "#fff", fontSize: 14, padding: "12px 14px",
-                                resize: "vertical", minHeight: 90, outline: "none", fontFamily: "inherit",
-                                boxSizing: "border-box",
-                              }}
-                            />
-                            <button
-                              onClick={handleReview}
-                              style={{
-                                marginTop: 12, background: "#E6B31E", border: "none", color: "#000",
-                                padding: "10px 24px", borderRadius: 6, cursor: "pointer", fontWeight: 700, fontSize: 13,
-                              }}
-                            >Post Review</button>
-                          </div>
-                          {movieReviews.length === 0 ? (
-                            <p style={{ color: "#555", textAlign: "center", padding: 32 }}>No reviews yet. Be the first.</p>
-                          ) : movieReviews.map((r, i) => (
-                            <div key={i} style={{ background: "#161616", borderRadius: 10, padding: 20, border: "1px solid #222", marginBottom: 12 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#2a2a2a", display: "flex", alignItems: "center", justifyContent: "center", color: "#E6B31E", fontWeight: 700 }}>
-                                  U{i + 1}
-                                </div>
-                                <div>
-                                  <p style={{ color: "#E6B31E", fontSize: 13, margin: 0 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</p>
-                                  <p style={{ color: "#555", fontSize: 11, margin: 0 }}>{r.date}</p>
-                                </div>
-                              </div>
-                              <p style={{ color: "#ccc", fontSize: 14, lineHeight: 1.7, margin: 0 }}>{r.text}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {tab === "similar" && (
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
-                          {similar.length === 0 ? (
-                            <p style={{ color: "#555", gridColumn: "1/-1", textAlign: "center", padding: 32 }}>No similar movies found.</p>
-                          ) : similar.map((m) => (
-                            <MovieCard key={m.id} movie={m} onClick={() => {}} isInWatchlist={watchlist.some((w) => w.id === m.id)} onWatchlistToggle={onWatchlistToggle} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          );
-        }
-
-        function SearchOverlay({ onClose, onMovieClick, watchlist, onWatchlistToggle }) {
-          const [query, setQuery] = useState("");
-          const [results, setResults] = useState([]);
-          const [loading, setLoading] = useState(false);
-          const debounce = useRef(null);
-          const inputRef = useRef(null);
-
-          useEffect(() => { inputRef.current?.focus(); }, []);
-
-          useEffect(() => {
-            clearTimeout(debounce.current);
-            if (!query.trim()) { setResults([]); return; }
-            setLoading(true);
-            debounce.current = setTimeout(() => {
-              fetcher(`${BASE}/search/movie?query=${encodeURIComponent(query)}&language=en-US&page=1`)
-                .then((d) => { setResults(d.results?.slice(0, 20) || []); setLoading(false); });
-            }, 400);
-          }, [query]);
-
-          return (
-            <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", zIndex: 2000, overflowY: "auto" }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 800, margin: "0 auto", padding: "60px 20px 40px" }}>
-                <div style={{ position: "relative", marginBottom: 40 }}>
-                  <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", fontSize: 22, color: "#666" }}>🔍</span>
-                  <input
-                    ref={inputRef}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search movies..."
+        // ----------  MOVIE CARD (HOVER + WATCHLIST BUTTON)  ----------
+        const MovieCard = ({ movie, onClick, isInWatchlist, onWatchlistToggle }) => {
+            const [hover, setHover] = useState(false);
+            const posterUrl = movie.poster_path ? `${IMG_BASE}/w342${movie.poster_path}` : null;
+            const year = movie.release_date?.slice(0, 4) || "";
+            return (
+                <div
+                    onClick={() => onClick(movie)}
+                    onMouseEnter={() => setHover(true)}
+                    onMouseLeave={() => setHover(false)}
                     style={{
-                      width: "100%", background: "#161616", border: "1px solid #333",
-                      color: "#fff", fontSize: 20, padding: "16px 20px 16px 52px",
-                      borderRadius: 10, outline: "none", boxSizing: "border-box",
-                      fontFamily: "inherit",
+                        position: "relative", borderRadius: 14, overflow: "hidden", cursor: "pointer",
+                        background: "#111118", transition: "transform 0.25s cubic-bezier(0.2,0.9,0.4,1.1), box-shadow 0.25s",
+                        transform: hover ? "scale(1.04) translateY(-6px)" : "scale(1)",
+                        boxShadow: hover ? "0 25px 35px -12px rgba(0,0,0,0.75)" : "0 6px 14px rgba(0,0,0,0.4)",
+                        willChange: "transform"
                     }}
-                  />
-                  <button onClick={onClose} style={{ position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#666", fontSize: 22, cursor: "pointer" }}>✕</button>
-                </div>
-                {loading && <p style={{ color: "#666", textAlign: "center" }}>Searching...</p>}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 14 }}>
-                  {results.map((m) => (
-                    <MovieCard key={m.id} movie={m} onClick={(mv) => { onMovieClick(mv); onClose(); }} isInWatchlist={watchlist.some((w) => w.id === m.id)} onWatchlistToggle={onWatchlistToggle} />
-                  ))}
-                </div>
-                {!loading && query && results.length === 0 && (
-                  <p style={{ color: "#555", textAlign: "center", padding: 40, fontSize: 16 }}>No results for "{query}"</p>
-                )}
-              </div>
-            </div>
-          );
-        }
-
-        function WatchlistPanel({ watchlist, onClose, onMovieClick, onRemove }) {
-          return (
-            <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1500, display: "flex", justifyContent: "flex-end" }}>
-              <div onClick={(e) => e.stopPropagation()} style={{
-                width: "min(420px, 100%)", background: "#0d0d0d", height: "100%",
-                borderLeft: "1px solid #222", overflowY: "auto", padding: "28px 24px",
-                boxShadow: "-20px 0 60px rgba(0,0,0,0.8)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-                  <h3 style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontSize: 22, margin: 0 }}>My Watchlist</h3>
-                  <button onClick={onClose} style={{ background: "none", border: "none", color: "#666", fontSize: 22, cursor: "pointer" }}>✕</button>
-                </div>
-                {watchlist.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "60px 20px" }}>
-                    <p style={{ fontSize: 40, marginBottom: 12 }}>🎬</p>
-                    <p style={{ color: "#555", fontSize: 15 }}>Your watchlist is empty.</p>
-                    <p style={{ color: "#444", fontSize: 13 }}>Click + on any movie to add it.</p>
-                  </div>
-                ) : watchlist.map((m) => {
-                  const poster = m.poster_path ? `${IMG}/w92${m.poster_path}` : null;
-                  return (
-                    <div key={m.id} style={{ display: "flex", gap: 14, marginBottom: 16, cursor: "pointer" }} onClick={() => { onMovieClick(m); onClose(); }}>
-                      <div style={{ width: 54, height: 80, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: "#1a1a2e" }}>
-                        {poster ? <img src={poster} alt={m.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", background: "#222" }} />}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: "#fff", fontWeight: 600, margin: "0 0 4px", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</p>
-                        <p style={{ color: "#E6B31E", fontSize: 12, margin: "0 0 4px" }}>★ {m.vote_average?.toFixed(1)}</p>
-                        <p style={{ color: "#666", fontSize: 12, margin: 0 }}>{m.release_date?.slice(0, 4)}</p>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onRemove(m); }}
-                        style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 18, padding: "0 4px", alignSelf: "flex-start" }}
-                        title="Remove"
-                      >✕</button>
+                >
+                    <div style={{ aspectRatio: "2/3", background: "#0a0a12" }}>
+                        {posterUrl ? (
+                            <img src={posterUrl} alt={movie.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} loading="lazy" />
+                        ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#1C1C2A", textAlign: "center", padding: 12 }}>
+                                <span style={{ color: "#6A6A7A", fontSize: 12, fontWeight: 500 }}>{movie.title}</span>
+                            </div>
+                        )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        }
-
-        function App() {
-          const [trending, setTrending] = useState([]);
-          const [popular, setPopular] = useState([]);
-          const [topRated, setTopRated] = useState([]);
-          const [upcoming, setUpcoming] = useState([]);
-          const [nowPlaying, setNowPlaying] = useState([]);
-          const [selectedId, setSelectedId] = useState(null);
-          const [searchOpen, setSearchOpen] = useState(false);
-          const [watchlistOpen, setWatchlistOpen] = useState(false);
-
-          const [watchlist, setWatchlist] = useLocalStorage("watchlist", []);
-          const [reviews, setReviews] = useLocalStorage("reviews", {});
-
-          useEffect(() => {
-            Promise.all([
-              fetcher(`${BASE}/trending/movie/day?language=en-US`),
-              fetcher(`${BASE}/movie/popular?language=en-US&page=1`),
-              fetcher(`${BASE}/movie/top_rated?language=en-US&page=1`),
-              fetcher(`${BASE}/movie/upcoming?language=en-US&page=1`),
-              fetcher(`${BASE}/movie/now_playing?language=en-US&page=1`)
-            ]).then(([tData, pData, trData, uData, nData]) => {
-              setTrending(tData.results || []);
-              setPopular(pData.results || []);
-              setTopRated(trData.results || []);
-              setUpcoming(uData.results || []);
-              setNowPlaying(nData.results || []);
-            }).catch(err => console.error("Error fetching metrics:", err));
-          }, []);
-
-          const toggleWatchlist = (movie) => {
-            const exists = watchlist.some((m) => m.id === movie.id);
-            if (exists) {
-              setWatchlist(watchlist.filter((m) => m.id !== movie.id));
-            } else {
-              setWatchlist([...watchlist, movie]);
-            }
-          };
-
-          const addReview = (movieId, review) => {
-            setReviews({
-              ...reviews,
-              [movieId]: [review, ...(reviews[movieId] || [])]
-            });
-          };
-
-          return (
-            <div style={{ background: "#060606", minHeight: "100vh", color: "#fff" }}>
-              <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 5%", background: "rgba(6,6,6,0.8)", backdropFilter: "blur(10px)", position: "sticky", top: 0, zIndex: 100 }}>
-                <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: "#E6B31E", fontFamily: "'Playfair Display', serif", letterSpacing: "0.05em" }}>CINEPHILE</h1>
-                <div style={{ display: "flex", gap: 24 }}>
-                  <button onClick={() => setSearchOpen(true)} style={{ background: "none", border: "none", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>🔍 Search</button>
-                  <button onClick={() => setWatchlistOpen(true)} style={{ background: "none", border: "none", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>🎬 Watchlist ({watchlist.length})</button>
+                    <div style={{
+                        position: "absolute", bottom: 0, left: 0, right: 0,
+                        background: "linear-gradient(to top, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.7) 60%, transparent 100%)",
+                        padding: "28px 12px 12px", opacity: hover ? 1 : 0, transition: "opacity 0.2s"
+                    }}>
+                        <p style={{ color: "#fff", fontWeight: 700, fontSize: 13, marginBottom: 6, lineHeight: 1.3 }}>{movie.title}</p>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {year && <span style={{ color: "#bbb", fontSize: 10 }}>{year}</span>}
+                            <span style={{ color: "#F5C518", fontSize: 11, fontWeight: 600 }}>★ {movie.vote_average?.toFixed(1)}</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onWatchlistToggle(movie); }}
+                        style={{
+                            position: "absolute", top: 10, right: 10, background: isInWatchlist ? "#F5C518" : "rgba(0,0,0,0.65)",
+                            border: "none", borderRadius: 40, width: 30, height: 30, display: "flex", alignItems: "center",
+                            justifyContent: "center", cursor: "pointer", fontSize: 16, fontWeight: "bold", color: isInWatchlist ? "#000" : "#fff",
+                            backdropFilter: "blur(4px)", opacity: hover ? 1 : 0, transition: "all 0.2s"
+                        }}
+                    >{isInWatchlist ? "✓" : "+"}</button>
                 </div>
-              </header>
+            );
+        };
 
-              {trending.length > 0 && <HeroSlider movies={trending} onMovieClick={(m) => setSelectedId(m.id)} />}
-              
-              <main style={{ marginTop: 40 }}>
-                <MovieRow title="Trending Hits" movies={trending} watchlist={watchlist} onWatchlistToggle={toggleWatchlist} onMovieClick={(m) => setSelectedId(m.id)} />
-                <MovieRow title="Now Playing in Theaters" movies={nowPlaying} watchlist={watchlist} onWatchlistToggle={toggleWatchlist} onMovieClick={(m) => setSelectedId(m.id)} accentColor="#4facfe" />
-                <MovieRow title="Popular Favorites" movies={popular} watchlist={watchlist} onWatchlistToggle={toggleWatchlist} onMovieClick={(m) => setSelectedId(m.id)} accentColor="#21D07A" />
-                <MovieRow title="Highly Anticipated Upcoming" movies={upcoming} watchlist={watchlist} onWatchlistToggle={toggleWatchlist} onMovieClick={(m) => setSelectedId(m.id)} accentColor="#ffb347" />
-                <MovieRow title="Top Rated Classics" movies={topRated} watchlist={watchlist} onWatchlistToggle={toggleWatchlist} onMovieClick={(m) => setSelectedId(m.id)} accentColor="#DB2360" />
-              </main>
+        // ----------  HERO SLIDER (CINEMATIC BACKDROP)  ----------
+        const HeroSlider = ({ movies, onMovieClick }) => {
+            const [index, setIndex] = useState(0);
+            const [visible, setVisible] = useState(true);
+            const intervalRef = useRef(null);
+            const cycleMovies = useCallback(() => {
+                setVisible(false);
+                setTimeout(() => {
+                    setIndex(prev => (prev + 1) % Math.min(movies.length, 8));
+                    setVisible(true);
+                }, 280);
+            }, [movies.length]);
 
-              {selectedId && (
-                <MovieModal 
-                  movieId={selectedId} 
-                  onClose={() => setSelectedId(null)} 
-                  watchlist={watchlist} 
-                  onWatchlistToggle={toggleWatchlist}
-                  reviews={reviews}
-                  onAddReview={addReview}
-                />
-              )}
+            useEffect(() => {
+                if (!movies.length) return;
+                intervalRef.current = setInterval(cycleMovies, 6200);
+                return () => clearInterval(intervalRef.current);
+            }, [movies.length, cycleMovies]);
 
-              {searchOpen && (
-                <SearchOverlay 
-                  onClose={() => setSearchOpen(false)} 
-                  watchlist={watchlist} 
-                  onWatchlistToggle={toggleWatchlist} 
-                  onMovieClick={(m) => setSelectedId(m.id)} 
-                />
-              )}
+            const movie = movies[index];
+            if (!movie) return null;
+            const backdrop = movie.backdrop_path ? `${IMG_BASE}/original${movie.backdrop_path}` : null;
+            const year = movie.release_date?.slice(0, 4);
+            const genreTags = (movie.genre_ids || []).slice(0, 3).map(id => GENRES_MAP[id]).filter(Boolean);
 
-              {watchlistOpen && (
-                <WatchlistPanel 
-                  watchlist={watchlist} 
-                  onClose={() => setWatchlistOpen(false)} 
-                  onMovieClick={(m) => setSelectedId(m.id)} 
-                  onRemove={toggleWatchlist} 
-                />
-              )}
+            return (
+                <div style={{ position: "relative", height: "88vh", minHeight: 560, overflow: "hidden", background: "#020208" }}>
+                    {backdrop && (
+                        <div style={{ position: "absolute", inset: 0, opacity: visible ? 1 : 0, transition: "opacity 0.5s ease" }}>
+                            <img src={backdrop} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top 20%" }} />
+                            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(110deg, #060606 0%, rgba(6,6,6,0.5) 40%, rgba(0,0,0,0.2) 70%)" }} />
+                            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "45%", background: "linear-gradient(to top, #060606, transparent)" }} />
+                        </div>
+                    )}
+                    <div style={{
+                        position: "absolute", bottom: "12%", left: "5%", right: "5%", maxWidth: 680,
+                        opacity: visible ? 1 : 0, transition: "opacity 0.4s", animation: visible ? "fadeSlideUp 0.4s ease-out" : "none"
+                    }}>
+                        <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+                            {genreTags.map(g => (
+                                <span key={g} style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "#F5C518", border: "1px solid rgba(245,197,24,0.4)", padding: "4px 12px", borderRadius: 40 }}>{g}</span>
+                            ))}
+                        </div>
+                        <h2 style={{ fontSize: "clamp(34px, 5vw, 60px)", fontWeight: 800, color: "#fff", fontFamily: "'Playfair Display', serif", lineHeight: 1.1, marginBottom: 16, textShadow: "0 2px 20px rgba(0,0,0,0.6)" }}>{movie.title}</h2>
+                        <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+                            <span style={{ color: "#F5C518", fontWeight: 800, fontSize: 18 }}>★ {movie.vote_average?.toFixed(1)}</span>
+                            {year && <span style={{ color: "#aaa", fontWeight: 500 }}>{year}</span>}
+                            <ScoreBadge score={movie.vote_average} />
+                        </div>
+                        <p style={{ color: "#DDD", fontSize: 15, lineHeight: 1.7, maxWidth: 580, marginBottom: 30 }}>
+                            {movie.overview?.slice(0, 210)}{movie.overview?.length > 210 ? "..." : ""}
+                        </p>
+                        <button onClick={() => onMovieClick(movie)} style={{
+                            background: "#F5C518", border: "none", padding: "12px 34px", borderRadius: 40,
+                            fontSize: 15, fontWeight: 700, color: "#121212", cursor: "pointer", transition: "all 0.2s",
+                            boxShadow: "0 4px 14px rgba(0,0,0,0.3)"
+                        }} onMouseEnter={e => e.currentTarget.style.background = "#ffdb4d"} onMouseLeave={e => e.currentTarget.style.background = "#F5C518"}>
+                            Explore masterpiece
+                        </button>
+                    </div>
+                    <div style={{ position: "absolute", bottom: "6%", right: "5%", display: "flex", gap: 10 }}>
+                        {movies.slice(0, 8).map((_, i) => (
+                            <button key={i} onClick={() => { setVisible(false); setTimeout(() => { setIndex(i); setVisible(true); }, 300); }}
+                                style={{ width: i === index ? 28 : 7, height: 7, borderRadius: 10, border: "none", background: i === index ? "#F5C518" : "rgba(255,255,255,0.4)", transition: "all 0.2s", cursor: "pointer" }} />
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // ----------  SCROLLABLE ROW  ----------
+        const MovieRow = ({ title, movies, onMovieClick, watchlist, onWatchlistToggle, accentColor = "#F5C518" }) => {
+            const rowRef = useRef(null);
+            return (
+                <div style={{ marginBottom: 54 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 5%", marginBottom: 18 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ width: 5, height: 28, background: accentColor, borderRadius: 5 }}></div>
+                            <h3 style={{ color: "#fff", fontSize: 21, fontWeight: 700, fontFamily: "'Playfair Display', serif", letterSpacing: "-0.2px" }}>{title}</h3>
+                        </div>
+                        <div style={{ display: "flex", gap: 12 }}>
+                            <button onClick={() => rowRef.current?.scrollBy({ left: -320, behavior: "smooth" })} style={{ background: "#23232E", border: "none", width: 34, height: 34, borderRadius: 50, color: "white", fontSize: 20, cursor: "pointer" }}>‹</button>
+                            <button onClick={() => rowRef.current?.scrollBy({ left: 320, behavior: "smooth" })} style={{ background: "#23232E", border: "none", width: 34, height: 34, borderRadius: 50, color: "white", fontSize: 20, cursor: "pointer" }}>›</button>
+                        </div>
+                    </div>
+                    <div ref={rowRef} style={{ display: "flex", gap: 16, overflowX: "auto", padding: "8px 5%", scrollbarWidth: "none" }}>
+                        {movies.slice(0, 20).map(m => (
+                            <div key={m.id} style={{ flexShrink: 0, width: 166 }}>
+                                <MovieCard movie={m} onClick={onMovieClick} isInWatchlist={watchlist.some(w => w.id === m.id)} onWatchlistToggle={onWatchlistToggle} />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // ----------  CAST CARD FOR MODAL  ----------
+        const CastCard = ({ person }) => (
+            <div style={{ flexShrink: 0, width: 100, textAlign: "center" }}>
+                <div style={{ width: 80, height: 80, borderRadius: 100, overflow: "hidden", margin: "0 auto 8px", background: "#1E1E2C", border: "2px solid #2C2C3A" }}>
+                    {person.profile_path ? <img src={`${IMG_BASE}/w185${person.profile_path}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt={person.name} /> : <div style={{ fontSize: 36, lineHeight: "80px", textAlign: "center" }}>🎭</div>}
+                </div>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "#fff", margin: "4px 0 2px" }}>{person.name}</p>
+                <p style={{ fontSize: 11, color: "#999" }}>{person.character}</p>
             </div>
-          );
-        }
+        );
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+        // ----------  FULL MOVIE MODAL (TABS: ABOUT, CAST, REVIEWS, SIMILAR)  ----------
+        const MovieModal = ({ movieId, onClose, watchlist, onWatchlistToggle, reviews, onAddReview }) => {
+            const [movie, setMovie] = useState(null);
+            const [credits, setCredits] = useState(null);
+            const [similar, setSimilar] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState("about");
+            const [reviewText, setReviewText] = useState("");
+            const [reviewRating, setReviewRating] = useState(0);
+            const modalRef = useRef(null);
+
+            useEffect(() => {
+                if (!movieId) return;
+                setLoading(true);
+                setActiveTab("about");
+                Promise.all([
+                    fetcher(`${BASE_URL}/movie/${movieId}?language=en-US`),
+                    fetcher(`${BASE_URL}/movie/${movieId}/credits?language=en-US`),
+                    fetcher(`${BASE_URL}/movie/${movieId}/similar?language=en-US&page=1`)
+                ]).then(([m, c, s]) => {
+                    setMovie(m);
+                    setCredits(c);
+                    setSimilar(s.results?.slice(0, 12) || []);
+                    setLoading(false);
+                }).catch(() => setLoading(false));
+            }, [movieId]);
+
+            const handleSubmitReview = () => {
+                if (!reviewText.trim() || reviewRating === 0) return;
+                onAddReview(movieId, { text: reviewText.trim(), rating: reviewRating, date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) });
+                setReviewText("");
+                setReviewRating(0);
+            };
+
+            const movieReviews = reviews[movieId] || [];
+            const inWatchlist = watchlist.some(w => w.id === movieId);
+
+            if (!movieId) return null;
+
+            return (
+                <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", backdropFilter: "blur(10px)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", overflowY: "auto" }}>
+                    <div ref={modalRef} onClick={e => e.stopPropagation()} style={{ maxWidth: 1000, width: "100%", background: "#0F0F17", borderRadius: 32, overflow: "hidden", boxShadow: "0 50px 90px rgba(0,0,0,0.6)", border: "1px solid #2A2A38" }}>
+                        {loading ? (
+                            <div style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <div style={{ width: 45, height: 45, border: "3px solid #2A2A38", borderTop: "3px solid #F5C518", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                            </div>
+                        ) : movie && (
+                            <>
+                                <div style={{ position: "relative", height: 360, background: "#000" }}>
+                                    {movie.backdrop_path && <img src={`${IMG_BASE}/original${movie.backdrop_path}`} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.7 }} alt="" />}
+                                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, #0F0F17 0%, transparent 55%, rgba(0,0,0,0.8) 100%)" }} />
+                                    <button onClick={onClose} style={{ position: "absolute", top: 20, right: 24, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 50, width: 40, height: 40, fontSize: 22, color: "#fff", cursor: "pointer" }}>✕</button>
+                                    <div style={{ position: "absolute", bottom: 24, left: 30, right: 30 }}>
+                                        <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+                                            {movie.genres?.slice(0, 4).map(g => <span key={g.id} style={{ background: "rgba(245,197,24,0.15)", padding: "4px 14px", borderRadius: 50, fontSize: 12, fontWeight: 600, color: "#F5C518" }}>{g.name}</span>)}
+                                        </div>
+                                        <h2 style={{ fontSize: 38, fontWeight: 800, color: "#fff", fontFamily: "'Playfair Display', serif", marginBottom: 12 }}>{movie.title}</h2>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+                                            <ScoreBadge score={movie.vote_average} />
+                                            <div><p style={{ color: "#aaa", fontSize: 12 }}>User Score</p><p style={{ fontWeight: 700, color: "#F5C518" }}>{movie.vote_average?.toFixed(1)} / 10</p></div>
+                                            {movie.release_date && <span style={{ color: "#ccc" }}>{movie.release_date.slice(0, 4)}</span>}
+                                            {movie.runtime && <span style={{ color: "#ccc" }}>{Math.floor(movie.runtime / 60)}h {movie.runtime % 60}m</span>}
+                                            <button onClick={() => onWatchlistToggle(movie)} style={{ background: inWatchlist ? "#F5C518" : "transparent", border: `1px solid ${inWatchlist ? "#F5C518" : "#666"}`, padding: "8px 26px", borderRadius: 40, fontWeight: 600, color: inWatchlist ? "#000" : "#fff", cursor: "pointer" }}>{inWatchlist ? "✓ In Watchlist" : "+ Add to Watchlist"}</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: "flex", gap: 2, padding: "0 28px", borderBottom: "1px solid #22222E" }}>
+                                    {["about", "cast", "reviews", "similar"].map(tab => (
+                                        <button key={tab} onClick={() => setActiveTab(tab)} style={{ background: "none", border: "none", padding: "16px 24px", fontWeight: 600, fontSize: 15, color: activeTab === tab ? "#F5C518" : "#8A8A9A", borderBottom: activeTab === tab ? "2px solid #F5C518" : "2px solid transparent", cursor: "pointer", textTransform: "capitalize" }}>{tab}</button>
+                                    ))}
+                                </div>
+                                <div style={{ padding: "30px 28px", maxHeight: 480, overflowY: "auto" }}>
+                                    {activeTab === "about" && (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                                            <p style={{ color: "#ddd", lineHeight: 1.75, fontSize: 15 }}>{movie.overview || "No synopsis provided."}</p>
+                                            {movie.tagline && <p style={{ color: "#F5C518", fontStyle: "italic", borderLeft: "3px solid #F5C518", paddingLeft: 18 }}>“{movie.tagline}”</p>}
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 8 }}>
+                                                <div style={{ background: "#191923", padding: 14, borderRadius: 20 }}><span style={{ color: "#888", fontSize: 12 }}>Status</span><p style={{ color: "#fff", fontWeight: 600 }}>{movie.status || "—"}</p></div>
+                                                <div style={{ background: "#191923", padding: 14, borderRadius: 20 }}><span style={{ color: "#888", fontSize: 12 }}>Original Language</span><p style={{ color: "#fff", fontWeight: 600 }}>{movie.original_language?.toUpperCase()}</p></div>
+                                                {movie.budget > 0 && <div style={{ background: "#191923", padding: 14, borderRadius: 20 }}><span style={{ color: "#888", fontSize: 12 }}>Budget</span><p style={{ color: "#fff" }}>${(movie.budget / 1e6).toFixed(1)}M</p></div>}
+                                                {movie.revenue > 0 && <div style={{ background: "#191923", padding: 14, borderRadius: 20 }}><span style={{ color: "#888", fontSize: 12 }}>Revenue</span><p style={{ color: "#fff" }}>${(movie.revenue / 1e6).toFixed(1)}M</p></div>}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {activeTab === "cast" && (
+                                        <div><div style={{ display: "flex", gap: 24, overflowX: "auto", paddingBottom: 12 }}>{credits?.cast?.slice(0, 16).map(p => <CastCard key={p.id} person={p} />)}</div></div>
+                                    )}
+                                    {activeTab === "reviews" && (
+                                        <div>
+                                            <div style={{ background: "#181822", borderRadius: 24, padding: 20, marginBottom: 28 }}>
+                                                <p style={{ color: "#ccc", marginBottom: 12 }}>Write your own verdict</p>
+                                                <StarRating value={reviewRating} onChange={setReviewRating} />
+                                                <textarea value={reviewText} onChange={e => setReviewText(e.target.value)} placeholder="Share your insight..." rows={3} style={{ width: "100%", marginTop: 16, background: "#0A0A10", border: "1px solid #333", borderRadius: 16, padding: 14, color: "#fff", resize: "vertical", fontFamily: "inherit" }} />
+                                                <button onClick={handleSubmitReview} style={{ marginTop: 14, background: "#F5C518", border: "none", padding: "10px 26px", borderRadius: 40, fontWeight: 700, color: "#000", cursor: "pointer" }}>Post Review</button>
+                                            </div>
+                                            {movieReviews.length === 0 ? <p style={{ color: "#777", textAlign: "center", padding: 28 }}>No reviews yet – be the first critic.</p> : movieReviews.map((rev, idx) => (
+                                                <div key={idx} style={{ background: "#14141E", borderRadius: 18, padding: 18, marginBottom: 14, border: "1px solid #2A2A34" }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}><div style={{ width: 34, height: 34, borderRadius: 50, background: "#2C2C3A", display: "flex", alignItems: "center", justifyContent: "center", color: "#F5C518" }}>🎬</div><div><StarRating value={rev.rating} onChange={() => {}} /><span style={{ fontSize: 11, color: "#888", marginLeft: 8 }}>{rev.date}</span></div></div>
+                                                    <p style={{ color: "#ccc", fontSize: 14, lineHeight: 1.6 }}>{rev.text}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {activeTab === "similar" && (
+                                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px,1fr))", gap: 18 }}>
+                                            {similar.length ? similar.map(m => <MovieCard key={m.id} movie={m} onClick={() => {}} isInWatchlist={watchlist.some(w => w.id === m.id)} onWatchlistToggle={onWatchlistToggle} />) : <p style={{ color: "#777", gridColumn: "1/-1", textAlign: "center" }}>No similar titles found.</p>}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // ----------  SEARCH OVERLAY  ----------
+        const SearchOverlay = ({ onClose, onMovieClick, watchlist, onWatchlistToggle }) => {
+            const [query, setQuery] = useState("");
+            const [results, setResults] = useState([]);
+            const [searching, setSearching] = useState(false);
+            const deb = useRef(null);
+            useEffect(() => {
+                if (deb.current) clearTimeout(deb.current);
+                if (!query.trim()) { setResults([]); return; }
+                setSearching(true);
+                deb.current = setTimeout(() => {
+                    fetcher(`${BASE_URL}/search/movie?query=${encodeURIComponent(query)}&language=en-US&page=1`).then(data => {
+                        setResults(data.results?.slice(0, 24) || []);
+                        setSearching(false);
+                    });
+                }, 420);
+            }, [query]);
+            return (
+                <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.96)", zIndex: 2000, overflowY: "auto" }}>
+                    <div onClick={e => e.stopPropagation()} style={{ maxWidth: 860, margin: "50px auto", padding: "20px" }}>
+                        <div style={{ position: "relative", marginBottom: 40 }}>
+                            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search any movie..." style={{ width: "100%", background: "#181822", border: "1px solid #3A3A4A", borderRadius: 80, padding: "16px 52px", fontSize: 18, color: "#fff", outline: "none" }} />
+                            <span style={{ position: "absolute", left: 18, top: 18, fontSize: 20, color: "#aaa" }}>🔍</span>
+                            <button onClick={onClose} style={{ position: "absolute", right: 20, top: 16, background: "none", border: "none", fontSize: 26, color: "#aaa", cursor: "pointer" }}>✕</button>
+                        </div>
+                        {searching && <p style={{ color: "#aaa", textAlign: "center" }}>searching...</p>}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px,1fr))", gap: 20 }}>
+                            {results.map(m => <MovieCard key={m.id} movie={m} onClick={(mv) => { onMovieClick(mv); onClose(); }} isInWatchlist={watchlist.some(w => w.id === m.id)} onWatchlistToggle={onWatchlistToggle} />)}
+                        </div>
+                        {!searching && query && results.length === 0 && <p style={{ color: "#666", textAlign: "center", marginTop: 48 }}>No results for “{query}”</p>}
+                    </div>
+                </div>
+            );
+        };
+
+        // ----------  WATCHLIST PANEL  ----------
+        const WatchlistPanel = ({ watchlist, onClose, onMovieClick, onRemove }) => (
+            <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1500, display: "flex", justifyContent: "flex-end" }}>
+                <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: "90%", background: "#0C0C14", height: "100%",
